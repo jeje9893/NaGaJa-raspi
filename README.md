@@ -64,16 +64,30 @@ python3 ~/nagaja/db_read_write_test.py
 python3 ~/nagaja/db_read_write_test.py --uid <userId>
 ```
 
+**실제 Firestore 컬렉션 구조 (Android 앱 기준):**
+```
+users/{uid}
+users/{uid}/schedules/{scheduleId}
+users/{uid}/dailyPlans/{planId}     ← schedules 하위가 아님
+```
+
 **테스트 항목:**
 
-| 단계 | 내용 | 확인 기준 |
-|---|---|---|
-| TEST 1 | `users` 컬렉션 전체 읽기 | 문서 목록 출력 |
-| TEST 2 | 특정 유저 단건 읽기 | 모든 필드 값 출력 |
-| TEST 3 | `prepMinutes` 필드 수정 후 재조회 | 수정 값 DB 반영 확인 |
-| ROLLBACK | 원래 값 복원 | 롤백 후 값 일치 확인 |
+| 단계 | 컬렉션 | 내용 | 확인 기준 |
+|---|---|---|---|
+| USERS 1 | `users` | 전체 읽기 | 문서 목록 출력 |
+| USERS 2 | `users` | 단건 읽기 | 모든 필드 출력 |
+| USERS 3 | `users` | `prepMinutes` 수정 후 재조회 | 수정 값 DB 반영 |
+| SCHED 1 | `schedules` | 해당 유저 스케줄 전체 읽기 | 문서 목록 출력 |
+| SCHED 2 | `schedules` | 단건 읽기 | 모든 필드 출력 |
+| SCHED 3 | `schedules` | `isActive` 수정 후 재조회 | 수정 값 DB 반영 |
+| PLANS 1 | `dailyPlans` | 해당 유저 플랜 전체 읽기 | 문서 목록 출력 |
+| PLANS 2 | `dailyPlans` | 단건 읽기 | 모든 필드 출력 |
+| PLANS 3 | `dailyPlans` | `displayColor` 수정 후 재조회 | 수정 값 DB 반영 |
+| ROLLBACK | 전체 | 모든 수정값 원복 | 원래 값 일치 확인 |
 
-모든 단계에서 `✅ PASS` 가 출력되면 정상입니다.
+모든 단계에서 `✅ PASS` 가 출력되면 정상입니다.  
+해당 유저에 `schedules` 또는 `dailyPlans` 문서가 없으면 `⏭️ SKIP` 으로 건너뜁니다.
 
 ---
 
