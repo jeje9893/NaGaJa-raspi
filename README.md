@@ -130,6 +130,35 @@ chromium --kiosk --noerrdialogs --disable-infobars \
     --app=file:///home/jeje9893/nagaja/timer_ui.html &
 ```
 
+### 키오스크 종료 방법
+
+키오스크 모드는 전체화면을 덮어 터미널 접근이 막힙니다. 아래 방법으로 종료하세요.
+
+**방법 1: 단축키로 터미널 열기**
+```
+Ctrl + Alt + T
+```
+터미널이 열리면: `pkill chromium`
+
+**방법 2: 가상 터미널 전환 (가장 빠름)**
+```
+Ctrl + Alt + F2
+```
+로그인 후:
+```bash
+pkill chromium
+```
+GUI 화면으로 복귀:
+```
+Ctrl + Alt + F1
+```
+
+**방법 3: SSH 원격 접속 (다른 기기에서)**
+```bash
+ssh jeje9893@<라즈베리파이_IP>
+pkill chromium
+```
+
 ---
 
 ## 자동 시작 설정
