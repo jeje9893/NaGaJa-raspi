@@ -4,13 +4,14 @@
 
 ```
 /home/jeje9893/nagaja/
-├── venv/                   # Python 가상환경
-├── timer_ui.html           # 터치스크린 UI (7인치, 800×480)
-├── nagaja_bridge.py        # Firestore ↔ WebSocket 브리지 + 부저 알람
-├── init_firestore.py       # Firestore 초기 데이터 생성 (1회성)
-├── firebase_test.py        # Firebase 연결 테스트
-├── requirements.txt        # Python 의존 패키지 목록
-├── serviceAccountKey.json  # Firebase 서비스 계정 키 (git 제외)
+├── venv/                      # Python 가상환경
+├── timer_ui.html              # 터치스크린 UI (7인치, 800×480)
+├── nagaja_bridge.py           # Firestore ↔ WebSocket 브리지 + 부저 알람
+├── init_firestore.py          # Firestore 초기 데이터 생성 (1회성)
+├── firebase_test.py           # Firebase 연결 테스트 (쓰기/읽기)
+├── db_read_write_test.py      # Firestore 읽기·수정 연동 테스트
+├── requirements.txt           # Python 의존 패키지 목록
+├── serviceAccountKey.json     # Firebase 서비스 계정 키 (git 제외)
 └── README.md
 ```
 
@@ -47,6 +48,34 @@ serviceAccountKey.json 파일을 ~/nagaja/ 에 복사
 ---
 
 ## 실행 순서
+
+### 0단계 — Firestore DB 읽기·수정 연동 테스트 (dbtest 브랜치)
+
+실제 Firestore에 저장된 `users` 컬렉션을 읽고 수정할 수 있는지 확인합니다.  
+테스트 후 변경된 값은 자동으로 원래 값으로 롤백됩니다.
+
+```bash
+source ~/nagaja/venv/bin/activate
+
+# 전체 유저 대상 (첫 번째 유저로 자동 선택)
+python3 ~/nagaja/db_read_write_test.py
+
+# 특정 유저 지정
+python3 ~/nagaja/db_read_write_test.py --uid <userId>
+```
+
+**테스트 항목:**
+
+| 단계 | 내용 | 확인 기준 |
+|---|---|---|
+| TEST 1 | `users` 컬렉션 전체 읽기 | 문서 목록 출력 |
+| TEST 2 | 특정 유저 단건 읽기 | 모든 필드 값 출력 |
+| TEST 3 | `prepMinutes` 필드 수정 후 재조회 | 수정 값 DB 반영 확인 |
+| ROLLBACK | 원래 값 복원 | 롤백 후 값 일치 확인 |
+
+모든 단계에서 `✅ PASS` 가 출력되면 정상입니다.
+
+---
 
 ### 1단계 — Firebase 연결 확인 (최초 1회)
 ```bash
