@@ -145,6 +145,100 @@ Exec=chromium-browser --kiosk --noerrdialogs --disable-infobars --app=file:///ho
 
 ---
 
+## GitHub에 포함되지 않은 보안 파일
+
+보안상 민감한 파일은 `.gitignore`에 등록되어 **GitHub에 올라가지 않습니다.**  
+`git clone` 또는 `git pull` 후 **수동으로** 라즈베리파이에 배치해야 합니다.
+
+| 파일 | 역할 | 취득 방법 |
+|---|---|---|
+| `serviceAccountKey.json` | Firebase 서비스 계정 비밀키 (운영용) | Firebase Console → 프로젝트 설정 → 서비스 계정 탭 → **새 비공개 키 생성** |
+| `testKey.json` | Firebase 비밀키 (테스트 프로젝트용) | 동일 (테스트용 Firebase 프로젝트에서 발급) |
+| `github token.txt` | GitHub Personal Access Token | GitHub → Settings → Developer Settings → Personal Access Tokens → Tokens (classic) |
+
+### 라즈베리파이로 파일 전송
+
+**방법 1: scp (같은 네트워크 내)**
+```bash
+# Windows PowerShell 또는 Git Bash 에서 실행
+scp serviceAccountKey.json jeje9893@<라즈베리파이_IP>:~/nagaja/
+scp testKey.json            jeje9893@<라즈베리파이_IP>:~/nagaja/
+```
+
+**방법 2: USB 드라이브**
+```
+1. USB에 파일 복사
+2. 라즈베리파이에 USB 꽂기
+3. 파일 관리자에서 ~/nagaja/ 로 복사
+```
+
+> **주의:** 이 파일들을 절대 git add 하거나 타인과 공유하지 마세요.
+
+---
+
+## Firebase 연결 방식
+
+프로젝트는 **Firebase Admin SDK + 서비스 계정 키 파일** 방식으로 Firestore에 연결합니다.
+
+```
+serviceAccountKey.json
+        ↓  (credentials.Certificate)
+Firebase Admin SDK
+        ↓  (firestore.client)
+Firestore DB
+```
+
+**어떤 Firebase 프로젝트에 연결되는지는 키 파일 내용으로 결정됩니다.**  
+코드 안에 프로젝트 ID나 DB URL이 하드코딩되어 있지 않습니다.
+
+키 파일을 참조하는 파일과 경로:
+
+| 파일 | 상수명 | 경로 |
+|---|---|---|
+| `nagaja_bridge.py` | `SERVICE_ACCOUNT_PATH` | `~/nagaja/serviceAccountKey.json` |
+| `init_firestore.py` | `SERVICE_ACCOUNT_PATH` | `~/nagaja/serviceAccountKey.json` |
+| `firebase_test.py` | `SERVICE_ACCOUNT_PATH` | `~/nagaja/serviceAccountKey.json` |
+
+### 다른 Firebase 프로젝트로 전환하는 방법
+
+**코드 변경 없이** 키 파일만 교체하면 됩니다.
+
+#### 1. 새 프로젝트의 서비스 계정 키 발급
+```
+Firebase Console (console.firebase.google.com)
+  → 전환할 프로젝트 선택
+  → 프로젝트 설정 (⚙️)
+  → 서비스 계정 탭
+  → [새 비공개 키 생성] 버튼 클릭
+  → JSON 파일 다운로드
+```
+
+#### 2. 기존 키 백업 (선택)
+```bash
+# 라즈베리파이에서
+cp ~/nagaja/serviceAccountKey.json ~/nagaja/serviceAccountKey.json.bak
+```
+
+#### 3. 새 키 파일 교체
+```bash
+# Windows에서 scp로 전송
+scp 새로운키파일.json jeje9893@<라즈베리파이_IP>:~/nagaja/serviceAccountKey.json
+```
+
+#### 4. 연결 확인
+```bash
+source ~/nagaja/venv/bin/activate
+python3 ~/nagaja/firebase_test.py
+# → 쓰기 완료 / 읽기 완료 출력되면 성공
+```
+
+#### 5. 브리지 재시작
+```bash
+sudo systemctl restart nagaja-bridge
+```
+
+---
+
 ## 데이터 연동 방식
 
 `timer_ui.html` 상단 `NAGAJA_CONFIG.dataSource` 값으로 전환합니다:
