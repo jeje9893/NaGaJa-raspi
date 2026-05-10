@@ -126,8 +126,8 @@ python3 ~/nagaja/nagaja_bridge.py
 
 ### 4단계 — 브라우저로 UI 열기 (터치스크린)
 ```bash
-chromium-browser --kiosk --noerrdialogs --disable-infobars \
-  --app=file:///home/jeje9893/nagaja/timer_ui.html
+chromium --kiosk --noerrdialogs --disable-infobars \
+    --app=file:///home/jeje9893/nagaja/timer_ui.html &
 ```
 
 ---
