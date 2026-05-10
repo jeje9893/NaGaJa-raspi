@@ -10,6 +10,7 @@
 ├── init_firestore.py          # Firestore 초기 데이터 생성 (1회성)
 ├── firebase_test.py           # Firebase 연결 테스트 (쓰기/읽기)
 ├── db_read_write_test.py      # Firestore 읽기·수정 연동 테스트
+├── DB_STRUCTURE.md            # Firestore 컬렉션 구조 개발자 참조 문서
 ├── requirements.txt           # Python 의존 패키지 목록
 ├── serviceAccountKey.json     # Firebase 서비스 계정 키 (git 제외)
 └── README.md

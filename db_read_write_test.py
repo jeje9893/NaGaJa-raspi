@@ -28,6 +28,9 @@ from firebase_admin import credentials, firestore
 
 SERVICE_ACCOUNT_PATH = os.path.expanduser("~/nagaja/serviceAccountKey.json")
 
+# dailyPlans + schedules 서브컬렉션이 모두 존재하는 확인된 유저
+DEFAULT_UID = "NTzZVeFvS7PbmChKhQgL"
+
 PASS = "✅ PASS"
 FAIL = "❌ FAIL"
 SKIP = "⏭️  SKIP"
@@ -247,7 +250,7 @@ def main():
     if not users:
         print("\n중단: 테스트할 유저 없음"); sys.exit(1)
 
-    uid = args.uid or users[0]["id"]
+    uid = args.uid or DEFAULT_UID
     print(f"\n  테스트 대상 uid: {uid}")
 
     user_data = test_users_read_single(db, uid)
