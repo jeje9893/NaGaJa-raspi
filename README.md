@@ -183,12 +183,57 @@ pkill chromium
 시스템 시계를 바꾸면 Firebase 인증 토큰이 꼬일 수 있습니다.  
 대신 아래 방법으로 상태를 직접 주입해 확인합니다.
 
-#### 방법 A: JSON 파일 직접 편집 (가장 빠름)
+---
 
-`timer_ui.html` 상단 `NAGAJA_CONFIG.dataSource`를 `'file'`로 변경한 뒤:
+#### 방법 A: demo 모드 (가장 빠름 — 파일·Firebase 불필요)
+
+**1단계:** `timer_ui.html` 상단 `NAGAJA_CONFIG` 블록에서 `dataSource` 변경:
+
+```javascript
+const NAGAJA_CONFIG = {
+  dataSource: 'demo',   // ← 'websocket' 에서 변경
+  ...
+};
+```
+
+**2단계:** 창모드로 열기:
 
 ```bash
-# 여유 상태 (GREEN)
+chromium --app=file:///home/jeje9893/nagaja/timer_ui.html \
+  --window-size=800,480 --window-position=0,0
+```
+
+현재 시각 기준으로 약 15분 후 HURRY(노랑), 25분 후 LATE(빨강)로 자동 전환됩니다.
+
+> 테스트 후 `dataSource: 'websocket'` 으로 되돌려야 합니다.
+
+---
+
+#### 방법 B: 파일 모드 (상태를 직접 지정하여 테스트)
+
+**1단계:** `timer_ui.html` 상단 `NAGAJA_CONFIG` 블록에서 `dataSource` 변경:
+
+```javascript
+const NAGAJA_CONFIG = {
+  dataSource: 'file',   // ← 'websocket' 에서 변경
+  stateFilePath: '/tmp/nagaja_state.json',
+  ...
+};
+```
+
+**2단계:** Chromium 실행 시 `--allow-file-access-from-files` 플래그 추가:
+
+```bash
+chromium --app=file:///home/jeje9893/nagaja/timer_ui.html \
+  --window-size=800,480 --window-position=0,0 \
+  --allow-file-access-from-files
+```
+
+> 이 플래그 없이는 Chromium이 보안 정책으로 로컬 파일 읽기를 차단합니다.
+
+**3단계:** 상태 JSON 파일 생성:
+
+```bash
 cat > /tmp/nagaja_state.json << 'EOF'
 {
   "wakeUpTime": "07:30",
@@ -208,17 +253,31 @@ cat > /tmp/nagaja_state.json << 'EOF'
 EOF
 ```
 
-`displayColor` 값만 바꿔가며 상태별 UI를 확인합니다:
+**4단계:** `displayColor` 값만 바꿔가며 상태별 UI를 확인합니다:
 
-| `displayColor` 값 | 화면 상태 | 링 색상 |
-|---|---|---|
-| `"GREEN"` | 여유 — 링 중앙에 수업 시각 표시 | 초록 |
-| `"YELLOW"` | 나가자! — 출발까지 카운트다운 | 노랑 |
-| `"RED"` | 지각 위기 — 카운트다운 빨강 깜빡임 | 빨강 |
+| `displayColor` 값 | 화면 상태 | 링 중앙 표시 | 링 색상 |
+|---|---|---|---|
+| `"GREEN"` | 여유 | 수업 시각 (회색) | 초록 |
+| `"YELLOW"` | 나가자! | 출발까지 카운트다운 | 노랑 |
+| `"RED"` | 지각 위기 | 카운트다운 빨강 깜빡임 | 빨강 |
 
-#### 방법 B: Firebase Console에서 실시간 변경
+JSON 파일을 저장하면 2초 내로 UI에 반영됩니다.
 
-브리지(`dataSource: 'websocket'`)가 실행 중인 상태에서:
+> 테스트 후 `dataSource: 'websocket'` 으로 되돌려야 합니다.
+
+**파일 모드가 동작하지 않을 때:**
+
+Chromium에서 F12 → Console 탭 확인:
+```
+[NaGaJa] 상태 파일 읽기 실패: ...
+```
+위 메시지가 보이면 플래그 누락 또는 파일 경로 문제입니다.
+
+---
+
+#### 방법 C: Firebase Console에서 실시간 변경 (브리지 실행 중일 때)
+
+브리지(`nagaja_bridge.py`)가 실행 중인 상태에서:
 
 ```
 Firebase Console
@@ -228,19 +287,6 @@ Firebase Console
 ```
 
 `on_snapshot`이 감지해 1~2초 내 UI가 자동 업데이트됩니다.
-
-#### 방법 C: demo 모드 (Firebase 없이 UI만 확인)
-
-`timer_ui.html` 상단 설정 변경:
-
-```javascript
-const NAGAJA_CONFIG = {
-  dataSource: 'demo',   // 'websocket' → 'demo'
-  ...
-};
-```
-
-현재 시각 기준으로 약 15분 뒤 HURRY → LATE 로 자동 전환됩니다.
 
 ---
 

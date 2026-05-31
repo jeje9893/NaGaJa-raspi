@@ -164,15 +164,24 @@ def today_kst_str() -> str:
     return datetime.now(KST).strftime("%Y-%m-%d")
 
 
-def timestamp_to_kst_str(ts) -> str | None:
-    """Firestore Timestamp → KST 'HH:MM' 문자열."""
+def _ts_to_utc(ts) -> datetime | None:
+    """Firestore DatetimeWithNanoseconds 또는 구형 Timestamp → UTC datetime."""
     if ts is None:
         return None
+    if isinstance(ts, datetime):
+        return ts.astimezone(timezone.utc) if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
     try:
-        dt_utc = datetime.fromtimestamp(ts.seconds, tz=timezone.utc)
-        return dt_utc.astimezone(KST).strftime("%H:%M")
+        return datetime.fromtimestamp(ts.seconds, tz=timezone.utc)
     except Exception:
         return None
+
+
+def timestamp_to_kst_str(ts) -> str | None:
+    """Firestore Timestamp → KST 'HH:MM' 문자열."""
+    dt_utc = _ts_to_utc(ts)
+    if dt_utc is None:
+        return None
+    return dt_utc.astimezone(KST).strftime("%H:%M")
 
 
 def _time_to_mins(s: str) -> int:
@@ -288,7 +297,9 @@ def start_firestore_listener(loop: asyncio.AbstractEventLoop):
                 dd = d.to_dict()
                 alarm_ts = dd.get("finalAlarmTime")
                 if alarm_ts:
-                    alarm_utc = datetime.fromtimestamp(alarm_ts.seconds, tz=timezone.utc)
+                    alarm_utc = _ts_to_utc(alarm_ts)
+                    if alarm_utc is None:
+                        continue
                     candidates.append((alarm_utc, dd))
             candidates.sort(key=lambda x: x[0])
 

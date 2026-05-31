@@ -342,7 +342,7 @@
    ════════════════════════════════════════════ */
 
 const NAGAJA_CONFIG = {
-  dataSource: 'websocket',
+  dataSource: 'websocket', // 'demo' | 'file' | 'websocket' 기본값 'websocket'은 백엔드 서버의 WebSocket에서 실시간 데이터 수신
   stateFilePath: '/tmp/nagaja_state.json',
   wsUrl: 'ws://localhost:8765',
   pollIntervalMs: 2000,
@@ -600,7 +600,7 @@ function initDataSource(){
       try{
         const r=await fetch(NAGAJA_CONFIG.stateFilePath+'?t='+Date.now());
         if(r.ok){ const d=await r.json(); nagajaData=Object.assign({},nagajaData,d); }
-      }catch(e){}
+      }catch(e){ console.error('[NaGaJa] 상태 파일 읽기 실패:', e.message); }
     }, NAGAJA_CONFIG.pollIntervalMs);
   } else if(NAGAJA_CONFIG.dataSource === 'websocket'){
     function connectWS(){
