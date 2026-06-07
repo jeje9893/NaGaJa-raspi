@@ -127,8 +127,9 @@ def init_gpio():
     try:
         # 능동 부저: 전압만 걸면 소리나므로 단순 디지털 ON/OFF (Buzzer)
         buzzer = Buzzer(BUZZER_PIN)
-        # 버튼: 내부 풀업, GND로 누름. bounce_time 으로 채터링 제거(300ms)
-        button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.3)
+        # 버튼: 내부 풀업, GND로 누름. bounce_time 으로 채터링 제거(50ms)
+        # lgpio 에서 bounce_time 은 글리치 필터라 너무 크면 그만큼 눌러야 인식됨 → 짧게
+        button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.05)
         button.when_pressed = _stop_alarm
         GPIO_AVAILABLE = True
         log.info(f"GPIO 초기화 완료 (부저={BUZZER_PIN}, 버튼={BUTTON_PIN}, gpiozero/lgpio)")

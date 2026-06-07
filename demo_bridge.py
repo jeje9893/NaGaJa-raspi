@@ -223,7 +223,7 @@ def init_gpio():
             mode = "능동형/ON·OFF"
         # 해제 버튼: 누르면 알람 정지
         try:
-            btn = Button(BUTTON_PIN, pull_up=True, bounce_time=0.3)
+            btn = Button(BUTTON_PIN, pull_up=True, bounce_time=0.05)
             btn.when_pressed = lambda *_: stop_alarm("버튼")
             globals()["_button"] = btn  # GC 방지
         except Exception as e:
