@@ -161,6 +161,7 @@ SCENE_ORDER = ["1", "2", "3", "4", "5", "6"]
 connected_clients: set = set()
 current_data: dict = build_scene("relaxed")
 current_label: str = "여유 (GREEN)"
+_prev_state: str | None = None
 MAIN_LOOP: asyncio.AbstractEventLoop | None = None
 
 
@@ -174,19 +175,46 @@ async def _broadcast(data: dict):
     )
 
 
+def _broadcast_current():
+    if MAIN_LOOP:
+        asyncio.run_coroutine_threadsafe(_broadcast(current_data), MAIN_LOOP)
+
+
+def _state_of(data: dict) -> str:
+    c = data.get("displayColor", "GREEN")
+    return "late" if c == "RED" else "hurry" if c == "YELLOW" else "relaxed"
+
+
 def show_scene(key: str):
-    """장면 전환 → 모든 화면에 송출. (key 는 '1'~'6')"""
-    global current_data, current_label
+    """장면 전환 → 모든 화면에 송출. (key 는 '1'~'6')
+
+    상태가 바뀌면 '삐삐'(전환음)를 울려 촬영 타이밍을 만든다.
+    기상알람(wake) 장면은 연속 알람 + 초록 배경 깜빡임.
+    """
+    global current_data, current_label, _prev_state, _alarm_active
     if key not in SCENES:
         return
     name, label = SCENES[key]
-    current_data = build_scene(name)
+    new_data = build_scene(name)
+    new_state = _state_of(new_data)
+
+    # 다른 장면으로 가면 진행 중이던 기상알람 정리(초록 깜빡임 해제)
+    if name != "wake":
+        _alarm_active = False
+        new_data["alarmRinging"] = False
+
+    current_data = new_data
     current_label = label
     log.info(f"▶ 장면: {label}")
-    if MAIN_LOOP:
-        asyncio.run_coroutine_threadsafe(_broadcast(current_data), MAIN_LOOP)
+    _broadcast_current()
+
+    # 상태 전환음(삐삐): 상태가 바뀔 때만. wake 는 연속 알람이라 제외
+    if name != "wake" and _prev_state is not None and new_state != _prev_state:
+        threading.Thread(target=double_beep, daemon=True).start()
+    _prev_state = new_state
+
     if name == "wake":
-        start_alarm()  # 기상알람 장면은 부저도 울림
+        start_alarm()  # 연속 알람 + 초록 배경 깜빡임
 
 
 async def ws_handler(websocket, path=None):
@@ -246,6 +274,17 @@ def _buzz(on: bool):
                 buzzer.off()
 
 
+def double_beep():
+    """상태 전환음 '삐 삐' 두 번 (연속 알람 중이면 건너뜀)."""
+    if _alarm_active:
+        return
+    log.info("🔊 전환음: 삐삐")
+    _buzz(True);  time.sleep(0.15)
+    _buzz(False); time.sleep(0.20)
+    _buzz(True);  time.sleep(0.15)
+    _buzz(False)
+
+
 def _alarm_loop():
     global _alarm_active
     log.info("🔔 데모 알람 시작 (s=정지, 버튼=정지)")
@@ -255,6 +294,8 @@ def _alarm_loop():
         _buzz(False); time.sleep(0.5)
     _buzz(False)
     _alarm_active = False
+    current_data["alarmRinging"] = False  # 초록 깜빡임 해제
+    _broadcast_current()
     log.info("🔕 데모 알람 종료")
 
 
@@ -264,6 +305,8 @@ def start_alarm():
         if _alarm_active:
             return
         _alarm_active = True
+    current_data["alarmRinging"] = True   # 화면 배경 초록 깜빡임
+    _broadcast_current()
     threading.Thread(target=_alarm_loop, daemon=True).start()
 
 
@@ -271,6 +314,8 @@ def stop_alarm(src: str = "명령"):
     global _alarm_active
     if _alarm_active:
         _alarm_active = False
+        current_data["alarmRinging"] = False
+        _broadcast_current()
         log.info(f"{src}(으)로 알람 정지")
 
 # ─────────────────────────────────────

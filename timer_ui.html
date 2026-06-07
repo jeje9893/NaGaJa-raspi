@@ -200,6 +200,14 @@
 
     @keyframes blink-red { 0%,100%{opacity:1} 50%{opacity:.3} }
     #app.late #countdown.urgent { animation: blink-red 1.1s ease-in-out infinite; }
+
+    /* ══ 상태별 배경 깜빡임 (시연/촬영용) ══ */
+    @keyframes blink-bg-yellow { 0%,100%{ background-color: var(--bg); } 50%{ background-color: #FCD34D; } }
+    @keyframes blink-bg-red    { 0%,100%{ background-color: var(--bg); } 50%{ background-color: #FCA5A5; } }
+    @keyframes blink-bg-green  { 0%,100%{ background-color: var(--bg); } 50%{ background-color: #86EFAC; } }
+    #app.hurry      { animation: blink-bg-yellow 1.0s ease-in-out infinite; }   /* 나가자: 노랑 */
+    #app.late       { animation: blink-bg-red 0.5s ease-in-out infinite; }      /* 지각위기: 빨강(더 빠르게) */
+    #app.alarm-ring { animation: blink-bg-green 0.7s ease-in-out infinite; }    /* 기상알람: 초록 (우선) */
   </style>
 </head>
 <body>
@@ -479,7 +487,8 @@ function updateStateUI(state, nm, d){
   const stateLabel=document.getElementById('state-label');
   const countSub = document.getElementById('countdown-sub');
 
-  app.className = state;
+  // 기상알람이 울리는 동안엔 alarm-ring 클래스로 배경을 초록 깜빡임
+  app.className = state + (d.alarmRinging ? ' alarm-ring' : '');
   giveUp.classList.remove('visible');
 
   const dep = toMins(d.departureTime);
