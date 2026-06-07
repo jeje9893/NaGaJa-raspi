@@ -125,7 +125,7 @@
 | `firebase_admin` | 7.4.0 | Firebase Admin SDK — Firestore 읽기/쓰기 |
 | `google-cloud-firestore` | 2.27.0 | Firestore 클라이언트 (on_snapshot 리스너) |
 | `websockets` | (requirements에 포함) | WebSocket 서버 (브라우저 UI와 통신) |
-| `RPi.GPIO` | (Pi 전용, 별도 설치) | GPIO 핀 제어 (부저, 버튼) |
+| `gpiozero` + `lgpio` | (Pi 전용, 별도 설치) | GPIO 핀 제어 (부저, 버튼) — Pi 5(RP1) 호환 |
 | `PyBluez` | 0.23 | Bluetooth RFCOMM 서버 |
 | `asyncio` | 표준 라이브러리 | 비동기 이벤트 루프 (WebSocket 서버) |
 | `grpcio` | 1.80.0 | Firestore gRPC 통신 기반 |
@@ -168,7 +168,7 @@ httpx==0.28.1                  ← HTTP 클라이언트 (Cloud Functions 호출)
 protobuf==6.33.6               ← Firestore 직렬화
 ```
 
-RPi.GPIO는 Raspberry Pi 전용이라 requirements.txt에서 별도 분리됨 (일반 환경 설치 시 오류 방지).
+GPIO 제어는 `gpiozero` + `lgpio`를 사용하며, Pi 전용이라 requirements.txt에서 분리해 별도 설치합니다 (일반 환경 설치 시 오류 방지). 구형 `RPi.GPIO`는 Pi 5(RP1 칩)에서 동작하지 않아 사용하지 않습니다.
 
 ---
 
@@ -182,8 +182,9 @@ RPi.GPIO는 Raspberry Pi 전용이라 requirements.txt에서 별도 분리됨 (�
 
 ```python
 async def main():
-    init_firebase()                          # 1. Firebase Admin SDK 초기화
-    _current_user_id = load_user_id()        # 2. 저장된 userId 로드
+    init_gpio()                              # 1. GPIO(부저/버튼) 초기화 (gpiozero)
+    init_firebase()                          # 2. Firebase Admin SDK 초기화
+    _current_user_id = load_user_id()        # 3. 저장된 userId 로드
 
     loop = asyncio.get_event_loop()
     # 3개 스레드 동시 시작
@@ -294,28 +295,28 @@ def start_alarm_checker():
 BUZZER_PIN = 18   # BCM 번호
 BUTTON_PIN = 17
 
+# gpiozero + lgpio (Pi 5 호환). 핀 팩토리는 lgpio 로 고정
+buzzer = Buzzer(BUZZER_PIN)                        # 능동 부저
+button = Button(BUTTON_PIN, pull_up=True,
+                bounce_time=0.05)                  # 50ms 디바운스
+button.when_pressed = _stop_alarm                  # 버튼 → 알람 해제
+
 def wake_up_alarm():
     """기상 알람: 최대 120초 동안 0.5초 간격으로 울림"""
-    deadline = time.time() + WAKE_ALARM_SECONDS  # 120초
+    deadline = time.time() + WAKE_ALARM_SECONDS    # 120초
     while _alarm_active and time.time() < deadline:
-        GPIO.output(BUZZER_PIN, GPIO.HIGH)
-        time.sleep(0.5)
-        GPIO.output(BUZZER_PIN, GPIO.LOW)
-        time.sleep(0.5)
+        buzzer.on();  time.sleep(0.5)
+        buzzer.off(); time.sleep(0.5)
 
 def double_beep():
     """상태 전환 시 삐-삐 두 번"""
-    GPIO.output(BUZZER_PIN, GPIO.HIGH); time.sleep(0.15)
-    GPIO.output(BUZZER_PIN, GPIO.LOW);  time.sleep(0.20)
-    GPIO.output(BUZZER_PIN, GPIO.HIGH); time.sleep(0.15)
-    GPIO.output(BUZZER_PIN, GPIO.LOW)
-
-# 버튼 인터럽트 등록 (FALLING edge, 300ms debounce)
-GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING,
-                      callback=_stop_alarm, bouncetime=300)
+    buzzer.on();  time.sleep(0.15)
+    buzzer.off(); time.sleep(0.20)
+    buzzer.on();  time.sleep(0.15)
+    buzzer.off()
 ```
 
-**능동 부저 + 하드웨어 인터럽트**: GPIO 소프트웨어 폴링이 아닌 하드웨어 인터럽트(FALLING edge)를 사용해 버튼 응답이 즉각적이며 CPU 부하가 없습니다.
+**능동 부저 + gpiozero**: `Button.when_pressed`(lgpio 엣지 이벤트) 콜백을 사용해 버튼 응답이 즉각적이며 CPU 폴링이 없습니다.
 
 #### 블루투스 RFCOMM 서버
 
@@ -602,7 +603,7 @@ iOS는 Classic Bluetooth RFCOMM을 지원하지 않습니다. iOS 지원을 위�
 | 버튼 반대쪽 | GND | 핀 9 |
 
 **능동 부저**: 전압만 공급하면 스스로 소리를 내는 타입. 별도 PWM 제어 불필요.  
-**PULL_UP 저항**: 소프트웨어 내부 풀업(`GPIO.PUD_UP`) 사용 → 외부 저항 불필요.
+**PULL_UP 저항**: gpiozero `Button(pull_up=True)` 내부 풀업 사용 → 외부 저항 불필요.
 
 ---
 
@@ -667,7 +668,7 @@ iOS는 Classic Bluetooth RFCOMM을 지원하지 않습니다. iOS 지원을 위�
 Firestore SDK는 별도 스레드에서 동작하고, WebSocket 서버는 asyncio 이벤트 루프에서 동작합니다. `asyncio.run_coroutine_threadsafe()`로 스레드 경계를 안전하게 넘어가는 설계는 실무 수준의 동시성 처리입니다.
 
 **3. 하드웨어 인터럽트 기반 버튼**
-GPIO 소프트웨어 폴링 대신 하드웨어 FALLING edge 인터럽트를 사용해 버튼 응답이 즉각적이며 CPU 부하가 없습니다.
+gpiozero `Button.when_pressed`(lgpio 엣지 이벤트) 콜백을 사용해 버튼 응답이 즉각적이며 CPU 폴링이 없습니다.
 
 **4. 3-mode 데이터 소스 설계**
 `websocket` / `file` / `demo` 세 가지 모드를 지원해 Pi 없이도 웹 브라우저에서 UI를 개발/테스트할 수 있습니다. 하드웨어 독립적인 개발 환경입니다.
@@ -680,7 +681,8 @@ GPIO 소프트웨어 폴링 대신 하드웨어 FALLING edge 인터럽트를 사
 | 도전 | 해결 방법 |
 |---|---|
 | Firestore Timestamp UTC/KST 변환 | `_ts_to_utc()`, `timestamp_to_kst_str()` 유틸 함수로 일관 처리 |
-| RPi.GPIO 없는 환경에서 테스트 | try/except로 Import 실패 감지 → 시뮬레이션 모드 자동 전환 |
+| Pi 5(RP1)에서 RPi.GPIO 미동작 | `gpiozero` + `lgpio` 로 전환 (핀 팩토리 lgpio 고정) |
+| gpiozero/lgpio 없는 환경에서 테스트 | import·장치 생성 실패 감지 → 시뮬레이션 모드 자동 전환 |
 | PyBluez 없는 환경 | 동일하게 BT_AVAILABLE 플래그로 graceful degradation |
 | 당일 중복 알람 방지 | `wake_done_keys` set + second < 5 조건 |
 | init_firestore.py와 실제 DB 구조 불일치 | DB_STRUCTURE.md에 차이점을 명문화 |
@@ -723,24 +725,24 @@ if chosen is None and candidates:
 
 ---
 
-### 코드 3: GPIO 알람 — 하드웨어 인터럽트로 즉각 해제
+### 코드 3: GPIO 알람 — 버튼 콜백으로 즉각 해제 (gpiozero)
 
 ```python
-GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING,
-                      callback=_stop_alarm, bouncetime=300)
+button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.05)
+button.when_pressed = _stop_alarm
 
-def _stop_alarm(channel=None):
+def _stop_alarm(*_args):
     global _alarm_active
     _alarm_active = False   # 알람 루프 즉시 종료
 
 def wake_up_alarm():
     deadline = time.time() + 120  # 120초 타임아웃
     while _alarm_active and time.time() < deadline:
-        GPIO.output(BUZZER_PIN, GPIO.HIGH); time.sleep(0.5)
-        GPIO.output(BUZZER_PIN, GPIO.LOW);  time.sleep(0.5)
+        buzzer.on();  time.sleep(0.5)
+        buzzer.off(); time.sleep(0.5)
 ```
 
-**설명**: `_alarm_active` 플래그를 공유하는 간단하지만 안전한 설계입니다. 버튼 인터럽트가 플래그를 False로 바꾸면 알람 루프가 다음 0.5초 내에 자연스럽게 종료됩니다.
+**설명**: `_alarm_active` 플래그를 공유하는 간단하지만 안전한 설계입니다. 버튼 콜백(`when_pressed`)이 플래그를 False로 바꾸면 알람 루프가 다음 0.5초 내에 자연스럽게 종료됩니다.
 
 ---
 

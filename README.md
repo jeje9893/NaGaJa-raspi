@@ -6,16 +6,24 @@
 /home/jeje9893/nagaja/
 ├── venv/                      # Python 가상환경
 ├── timer_ui.html              # 터치스크린 UI (7인치, 800×480)
-├── nagaja_bridge.py           # Firestore ↔ WebSocket 브리지 + 부저 알람
+├── nagaja_bridge.py           # Firestore ↔ WebSocket 브리지 + 부저 알람 (gpiozero)
+├── demo_bridge.py             # 구동화면 촬영/시연용 데모 브리지 (Firebase 불필요)
+├── hardware_test.py           # 부저/버튼 하드웨어 점검 서버
+├── hardware_test.html         # 하드웨어 점검 UI
 ├── init_firestore.py          # Firestore 초기 데이터 생성 (1회성)
 ├── firebase_test.py           # Firebase 연결 테스트 (쓰기/읽기)
 ├── db_read_write_test.py      # Firestore 읽기·수정 연동 테스트
-├── DB_STRUCTURE.md            # Firestore 컬렉션 구조 개발자 참조 문서
-├── mobileEdit.md              # 모바일 앱 수정 사항 (블루투스 연동)
 ├── requirements.txt           # Python 의존 패키지 목록
+├── README.md                  # (이 문서) 세팅 가이드
+├── PROJECT_DESCRIPTION.md     # 앱/Firestore 데이터 명세
+├── DB_STRUCTURE.md            # Firestore 컬렉션 구조 개발자 참조
+├── DEMO_CAPTURE.md            # 구동화면 촬영 가이드
+├── HARDWARE_TEST.md           # 부저/버튼 하드웨어 점검 가이드
+├── analysis.md                # 코드 전체 분석 문서
+├── slide_outline.md           # 발표 슬라이드 개요
+├── mobileEdit.md              # 모바일 앱 수정 사항 (블루투스 연동)
 ├── serviceAccountKey.json     # Firebase 서비스 계정 키 (git 제외)
-├── user_config.json           # 수신된 사용자 UID 저장 파일 (git 제외)
-└── README.md
+└── user_config.json           # 수신된 사용자 UID 저장 파일 (git 제외)
 ```
 
 ---
@@ -39,13 +47,34 @@ cd nagaja
 python3 -m venv ~/nagaja/venv
 source ~/nagaja/venv/bin/activate
 pip install -r requirements.txt
-pip install RPi.GPIO     # 라즈베리파이 GPIO
-pip install PyBluez      # 블루투스 (libbluetooth-dev 필요)
+pip install gpiozero lgpio        # 라즈베리파이 GPIO (Pi 5: RPi.GPIO 대신 gpiozero+lgpio)
+sudo apt install -y python3-bluez # 블루투스 (PyBluez) — pip PyBluez 0.23 은 설치 불가
 ```
 
-> PyBluez 설치 전 시스템 패키지 설치:
+> **블루투스(PyBluez) 주의**: PyPI 의 `PyBluez 0.23`(2020, 마지막 릴리스)은
+> `use_2to3` 오류로 최신 setuptools/Python 에서 **설치되지 않습니다.**
+> 아래 중 하나를 사용하세요(모두 `import bluetooth` 동일, 코드 수정 불필요):
 > ```bash
-> sudo apt install libbluetooth-dev
+> # (권장) 시스템 미리빌드 패키지 — 아래 system-site-packages 설정 필요
+> sudo apt install -y python3-bluez
+> # 또는 유지보수 포크
+> sudo apt install -y libbluetooth-dev && pip install pybluez2
+> ```
+> 블루투스는 앱에서 UID를 수신하는 용도일 뿐이라, 없으면 `user_config.json`에
+> UID를 직접 넣어도 됩니다(브리지는 BT 없이도 `BT_AVAILABLE=False`로 동작).
+>
+> **라즈베리파이 5 참고**: 구형 `RPi.GPIO`는 Pi 5(RP1 칩)에서
+> `Cannot determine SOC peripheral base address` 오류로 동작하지 않습니다.
+> 본 프로젝트는 `gpiozero` + `lgpio`를 사용합니다.
+> `lgpio` 빌드가 실패하면(Python 3.13 등) 미리 빌드된 패키지를 쓰세요:
+> ```bash
+> sudo apt install -y python3-lgpio python3-gpiozero
+> ```
+>
+> **system-site-packages 설정**: `python3-bluez`·`python3-lgpio` 등 apt 미리빌드
+> 패키지를 venv 에서 쓰려면 한 번만 아래를 실행하세요:
+> ```bash
+> sed -i 's/include-system-site-packages = false/include-system-site-packages = true/' ~/nagaja/venv/pyvenv.cfg
 > ```
 
 ### 3. Firebase 서비스 계정 키 배치
@@ -357,7 +386,7 @@ sudo nano /etc/xdg/autostart/nagaja-ui.desktop
 [Desktop Entry]
 Type=Application
 Name=NaGaJa UI
-Exec=chromium-browser --kiosk --noerrdialogs --disable-infobars --app=file:///home/jeje9893/nagaja/timer_ui.html
+Exec=chromium --kiosk --noerrdialogs --disable-infobars --app=file:///home/jeje9893/nagaja/timer_ui.html
 ```
 
 ---
@@ -373,9 +402,27 @@ Exec=chromium-browser --kiosk --noerrdialogs --disable-infobars --app=file:///ho
 
 > 핀 번호는 `nagaja_bridge.py` 상단 `BUZZER_PIN`, `BUTTON_PIN` 에서 변경 가능합니다.
 
+**GPIO 제어:** `gpiozero` + `lgpio` 사용 (Pi 5 호환). 능동 부저는 `Buzzer`, 버튼은
+`Button(pull_up=True, bounce_time=0.05)`. 핀 팩토리는 `lgpio`로 고정됩니다.
+
+> SM-1205C 같은 **마그네틱 부저는 GPIO 전류(~16mA)를 초과**해 3.3V 직결로는
+> 소리가 약할 수 있습니다. 트랜지스터(NPN)로 5V 구동하거나, 수동형 부저는
+> PWM 구동이 필요합니다. 자세한 점검·배선은 `HARDWARE_TEST.md` 참고.
+
 **부저 동작:**
 - 기상 알람 시각 도달 → 0.5초 간격으로 최대 2분 울림, 버튼으로 즉시 해제
 - 여유→나가자, 나가자→지각위기 전환 시점 → '삐 삐' 두 번
+
+---
+
+## 테스트 / 시연 도구
+
+| 도구 | 용도 | 가이드 |
+|---|---|---|
+| `hardware_test.py` + `hardware_test.html` | 부저/버튼 하드웨어 단독 점검 (Firebase 불필요) | `HARDWARE_TEST.md` |
+| `demo_bridge.py` + `timer_ui.html` | 상태별 구동화면 시연·촬영 (전환음·배경 깜빡임) | `DEMO_CAPTURE.md` |
+
+> 두 도구와 `nagaja_bridge.py`는 모두 8765 포트를 쓰므로 **한 번에 하나만** 실행하세요.
 
 ---
 

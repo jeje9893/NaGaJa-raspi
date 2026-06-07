@@ -323,7 +323,7 @@
 **핵심 메시지**: 실무에서도 쓰이는 기술들의 조합
 
 **들어갈 내용**:
-- **Raspberry Pi**: Python 3.10+, asyncio, RPi.GPIO, PyBluez
+- **Raspberry Pi**: Python 3.10+, asyncio, gpiozero+lgpio (Pi 5 호환), PyBluez
 - **Cloud**: Firebase Admin SDK 7.4, Firestore, Cloud Functions, Auth
 - **Frontend**: HTML/CSS/SVG/Vanilla JS, Chromium 키오스크
 - **Mobile**: Flutter (Android/iOS), firebase_flutter

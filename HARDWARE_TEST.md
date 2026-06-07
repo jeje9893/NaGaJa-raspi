@@ -41,12 +41,12 @@ pip install websockets gpiozero lgpio   # 최초 1회 (라즈베리파이 5 호�
 python3 hardware_test.py
 
 # 2) 화면 띄우기 (다른 터미널 / 키오스크)
-chromium-browser --kiosk hardware_test.html
+chromium --kiosk hardware_test.html
 #   또는 그냥 브라우저로 hardware_test.html 열기
 ```
 
 서버 로그에 `[실기기(GPIO)] 하드웨어 테스트 서버 시작` 이 보이면 GPIO가 활성화된 것입니다.
-(`RPi.GPIO` 가 없는 PC에서는 `[시뮬레이션]` 모드로 떠서 UI·통신만 점검됩니다.)
+(`gpiozero`/`lgpio` 가 없는 PC에서는 `[시뮬레이션]` 모드로 떠서 UI·통신만 점검됩니다.)
 
 ---
 
