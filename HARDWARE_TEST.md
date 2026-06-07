@@ -37,7 +37,7 @@
 # 1) 서버 실행 (라즈베리파이)
 cd ~/nagaja/ui            # hardware_test.py 가 있는 위치
 source ~/nagaja/venv/bin/activate
-pip install websockets RPi.GPIO   # 최초 1회
+pip install websockets gpiozero lgpio   # 최초 1회 (라즈베리파이 5 호환)
 python3 hardware_test.py
 
 # 2) 화면 띄우기 (다른 터미널 / 키오스크)
@@ -82,7 +82,8 @@ chromium-browser --kiosk hardware_test.html
 
 | 증상 | 점검 |
 |---|---|
-| 화면에 "시뮬레이션 모드" | `RPi.GPIO` 미설치 또는 PC에서 실행 중 → 라즈베리파이에서 `pip install RPi.GPIO` |
+| 화면에 "시뮬레이션 모드" | GPIO 라이브러리 미설치 또는 PC에서 실행 중 → 라즈베리파이에서 `pip install gpiozero lgpio` |
+| `Cannot determine SOC peripheral base address` | 라즈베리파이 5에서 구형 `RPi.GPIO` 사용 시 발생. 본 코드는 `gpiozero`+`lgpio` 를 쓰므로 `pip install gpiozero lgpio` 후 재실행 |
 | 부저 표시등은 켜지는데 소리 없음 | 부저 배선/극성, 능동 부저 여부, GPIO18 연결 확인 |
 | 물리 버튼을 눌러도 화면 반응 없음 | 버튼이 GPIO17↔GND 인지, 눌림 방향, 접촉 불량 확인 |
 | "서버에 연결되어 있지 않습니다" | `hardware_test.py` 실행 여부, 같은 기기에서 여는지(ws://localhost:8765) |

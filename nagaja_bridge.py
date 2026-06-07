@@ -14,7 +14,8 @@ nagaja_bridge.py — Firestore <-> HTML UI 브리지 + 부저 알람
   python3 nagaja_bridge.py
 
 필수 패키지:
-  pip install firebase-admin websockets RPi.GPIO PyBluez
+  pip install firebase-admin websockets gpiozero lgpio PyBluez
+  (라즈베리파이 5 호환을 위해 RPi.GPIO 대신 gpiozero+lgpio 사용)
 
 GPIO 핀 (BCM 번호):
   BUZZER_PIN = 18  — 능동 부저 (+)
@@ -33,11 +34,20 @@ import websockets
 import firebase_admin
 from firebase_admin import credentials, firestore
 
+# 라즈베리파이 5(RP1 칩)에서는 RPi.GPIO 가 동작하지 않으므로 gpiozero + lgpio 사용.
+# lgpio 핀 팩토리를 강제해 구형 RPi.GPIO 백엔드가 잘못 선택되는 것을 방지.
+os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
+
 try:
-    import RPi.GPIO as GPIO
-    GPIO_AVAILABLE = True
-except (ImportError, RuntimeError):
-    GPIO_AVAILABLE = False
+    from gpiozero import Buzzer, Button
+    GPIOZERO_IMPORTED = True
+except ImportError:
+    GPIOZERO_IMPORTED = False
+
+# 실제 GPIO 사용 가능 여부는 GPIO 초기화에 성공해야 확정됨.
+GPIO_AVAILABLE = False
+buzzer = None
+button = None
 
 try:
     import bluetooth
@@ -94,28 +104,49 @@ def save_user_id(uid: str):
         log.warning(f"사용자 설정 저장 실패: {e}")
 
 # ─────────────────────────────────────
-#  GPIO 초기화
-# ─────────────────────────────────────
-
-if GPIO_AVAILABLE:
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(BUZZER_PIN, GPIO.OUT, initial=GPIO.LOW)
-    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    log.info(f"GPIO 초기화 완료 (부저={BUZZER_PIN}, 버튼={BUTTON_PIN})")
-else:
-    log.warning("RPi.GPIO 없음 — 부저 기능 비활성화 (시뮬레이션 모드)")
-
-# ─────────────────────────────────────
-#  부저 제어
+#  GPIO 초기화 (gpiozero + lgpio — 라즈베리파이 5 호환)
 # ─────────────────────────────────────
 
 _alarm_active = False
 _alarm_lock   = threading.Lock()
 
 
+def _stop_alarm(*_args):
+    global _alarm_active
+    if _alarm_active:
+        _alarm_active = False
+        log.info("버튼으로 기상 알람 해제")
+
+
+def init_gpio():
+    """능동 부저(GPIO18)와 해제 버튼(GPIO17) 초기화. 실패 시 시뮬레이션 모드."""
+    global GPIO_AVAILABLE, buzzer, button
+    if not GPIOZERO_IMPORTED:
+        log.warning("gpiozero 없음 — 부저 기능 비활성화 (pip install gpiozero lgpio)")
+        return
+    try:
+        # 능동 부저: 전압만 걸면 소리나므로 단순 디지털 ON/OFF (Buzzer)
+        buzzer = Buzzer(BUZZER_PIN)
+        # 버튼: 내부 풀업, GND로 누름. bounce_time 으로 채터링 제거(300ms)
+        button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.3)
+        button.when_pressed = _stop_alarm
+        GPIO_AVAILABLE = True
+        log.info(f"GPIO 초기화 완료 (부저={BUZZER_PIN}, 버튼={BUTTON_PIN}, gpiozero/lgpio)")
+    except Exception as e:
+        GPIO_AVAILABLE = False
+        log.warning(f"GPIO 초기화 실패 — 시뮬레이션 모드로 전환: {e}")
+
+# ─────────────────────────────────────
+#  부저 제어
+# ─────────────────────────────────────
+
+
 def _buzz(on: bool):
-    if GPIO_AVAILABLE:
-        GPIO.output(BUZZER_PIN, GPIO.HIGH if on else GPIO.LOW)
+    if GPIO_AVAILABLE and buzzer is not None:
+        if on:
+            buzzer.on()
+        else:
+            buzzer.off()
 
 
 def double_beep():
@@ -143,17 +174,6 @@ def wake_up_alarm():
     _buzz(False)
     _alarm_active = False
     log.info("기상 알람 종료")
-
-
-def _stop_alarm(channel=None):
-    global _alarm_active
-    if _alarm_active:
-        _alarm_active = False
-        log.info("버튼으로 기상 알람 해제")
-
-
-if GPIO_AVAILABLE:
-    GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=_stop_alarm, bouncetime=300)
 
 # ─────────────────────────────────────
 #  시간 유틸
@@ -446,6 +466,7 @@ def init_firebase():
 
 async def main():
     global _current_user_id
+    init_gpio()
     init_firebase()
 
     _current_user_id = load_user_id()
@@ -469,4 +490,11 @@ if __name__ == "__main__":
         asyncio.run(main())
     finally:
         if GPIO_AVAILABLE:
-            GPIO.cleanup()
+            try:
+                if buzzer is not None:
+                    buzzer.off()
+                    buzzer.close()
+                if button is not None:
+                    button.close()
+            except Exception:
+                pass

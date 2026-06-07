@@ -19,8 +19,9 @@ hardware_test.py — 라즈베리파이 부저/버튼 하드웨어 테스트 서
   #   chromium-browser --kiosk hardware_test.html
 
 필수 패키지:
-  pip install websockets RPi.GPIO
-  (RPi.GPIO 가 없으면 시뮬레이션 모드로 UI만 점검 가능 — 데스크탑에서도 실행됨)
+  pip install websockets gpiozero lgpio
+  (라즈베리파이 5 호환을 위해 RPi.GPIO 대신 gpiozero+lgpio 사용.
+   GPIO 라이브러리가 없으면 시뮬레이션 모드로 UI만 점검 — 데스크탑에서도 실행됨)
 
 GPIO 핀 (BCM, nagaja_bridge.py 와 동일):
   BUZZER_PIN = 18  — 능동 부저 (+)
@@ -33,13 +34,24 @@ import logging
 import threading
 import time
 
+import os
+
 import websockets
 
+# 라즈베리파이 5(RP1 칩)에서는 RPi.GPIO 가 동작하지 않으므로 gpiozero + lgpio 사용.
+# lgpio 핀 팩토리를 강제해 구형 RPi.GPIO 백엔드가 잘못 선택되는 것을 방지.
+os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
+
 try:
-    import RPi.GPIO as GPIO
-    GPIO_AVAILABLE = True
-except (ImportError, RuntimeError):
-    GPIO_AVAILABLE = False
+    from gpiozero import Buzzer, Button
+    GPIOZERO_IMPORTED = True
+except ImportError:
+    GPIOZERO_IMPORTED = False
+
+# 실제 GPIO 사용 가능 여부는 init_gpio() 에서 장치 생성에 성공해야 확정됨.
+GPIO_AVAILABLE = False
+buzzer: "Buzzer | None" = None
+button: "Button | None" = None
 
 # ─────────────────────────────────────
 #  설정 (nagaja_bridge.py 와 동일)
@@ -101,8 +113,11 @@ def _buzz(on: bool):
     """부저 ON/OFF + 화면 표시를 위한 상태 브로드캐스트."""
     global _buzzer_on
     _buzzer_on = bool(on)
-    if GPIO_AVAILABLE:
-        GPIO.output(BUZZER_PIN, GPIO.HIGH if on else GPIO.LOW)
+    if GPIO_AVAILABLE and buzzer is not None:
+        if on:
+            buzzer.on()
+        else:
+            buzzer.off()
     _emit({"event": "buzzer", "on": _buzzer_on})
 
 
@@ -149,26 +164,33 @@ def stop_alarm(source: str = "버튼"):
 # ─────────────────────────────────────
 
 
-def _on_button(channel=None):
+def _on_button():
     """실제 버튼 누름 → 화면에 즉시 표시 + 알람 해제."""
     emit_log("✅ 물리 버튼(GPIO17) 눌림 감지")
     _emit({"event": "button", "ts": time.strftime("%H:%M:%S")})
     stop_alarm(source="물리 버튼")
 
 # ─────────────────────────────────────
-#  GPIO 초기화
+#  GPIO 초기화 (gpiozero + lgpio — 라즈베리파이 5 호환)
 # ─────────────────────────────────────
 
 
 def init_gpio():
-    if not GPIO_AVAILABLE:
-        log.warning("RPi.GPIO 없음 — 시뮬레이션 모드 (UI/통신만 점검, 실제 부저는 안 울림)")
+    global GPIO_AVAILABLE, buzzer, button
+    if not GPIOZERO_IMPORTED:
+        log.warning("gpiozero 없음 — 시뮬레이션 모드 (pip install gpiozero lgpio)")
         return
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(BUZZER_PIN, GPIO.OUT, initial=GPIO.LOW)
-    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.add_event_detect(BUTTON_PIN, GPIO.FALLING, callback=_on_button, bouncetime=300)
-    log.info(f"GPIO 초기화 완료 (부저={BUZZER_PIN}, 버튼={BUTTON_PIN})")
+    try:
+        # 능동 부저: 전압만 걸면 소리나므로 단순 디지털 ON/OFF (Buzzer)
+        buzzer = Buzzer(BUZZER_PIN)
+        # 버튼: 내부 풀업, GND로 누름. bounce_time 으로 채터링 제거(300ms)
+        button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.3)
+        button.when_pressed = _on_button
+        GPIO_AVAILABLE = True
+        log.info(f"GPIO 초기화 완료 (부저={BUZZER_PIN}, 버튼={BUTTON_PIN}, gpiozero/lgpio)")
+    except Exception as e:
+        GPIO_AVAILABLE = False
+        log.warning(f"GPIO 초기화 실패 — 시뮬레이션 모드로 전환: {e}")
 
 # ─────────────────────────────────────
 #  UI 명령 처리
@@ -244,6 +266,12 @@ if __name__ == "__main__":
         pass
     finally:
         if GPIO_AVAILABLE:
-            GPIO.output(BUZZER_PIN, GPIO.LOW)
-            GPIO.cleanup()
-            log.info("GPIO 정리 완료")
+            try:
+                if buzzer is not None:
+                    buzzer.off()
+                    buzzer.close()
+                if button is not None:
+                    button.close()
+                log.info("GPIO 정리 완료")
+            except Exception:
+                pass
