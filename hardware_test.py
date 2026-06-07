@@ -35,6 +35,7 @@ import threading
 import time
 
 import os
+import sys
 
 import websockets
 
@@ -43,15 +44,28 @@ import websockets
 os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
 
 try:
-    from gpiozero import Buzzer, Button
+    from gpiozero import Buzzer, Button, PWMOutputDevice
     GPIOZERO_IMPORTED = True
 except ImportError:
     GPIOZERO_IMPORTED = False
 
+# ── 부저 구동 모드 ──────────────────────────────
+#   능동형(active, 기본): 전압만 걸면 소리남 → Buzzer (DC ON/OFF)
+#   수동형(passive)     : PWM 주파수를 줘야 소리남 → PWMOutputDevice
+#   실행: python3 hardware_test.py --passive
+#
+#   ⚠ 주의: XCMT12D2001AP 는 코일 임피던스 40Ω·정격 1.5~2V 라
+#   3.3V GPIO 직결은 사양 초과(과전압·과전류)다. 듀티를 낮춰 평균 전류를
+#   줄여 두었으나, 직결 테스트는 '짧게'만 하고 장시간 알람은 피할 것.
+#   (정식 사용은 트랜지스터 또는 직렬저항 권장)
+PASSIVE_MODE = ("--passive" in sys.argv)
+PASSIVE_FREQ = 2048   # Hz, XCMT12D2001AP(HC12G-P) 공진 주파수 — 이 대역에서 가장 큰 소리
+PASSIVE_DUTY = 0.20   # 듀티 20% — 평균 전류를 낮춰 GPIO 보호 (소리가 너무 작으면 값을 올릴 것)
+
 # 실제 GPIO 사용 가능 여부는 init_gpio() 에서 장치 생성에 성공해야 확정됨.
 GPIO_AVAILABLE = False
-buzzer: "Buzzer | None" = None
-button: "Button | None" = None
+buzzer = None
+button = None
 
 # ─────────────────────────────────────
 #  설정 (nagaja_bridge.py 와 동일)
@@ -114,10 +128,15 @@ def _buzz(on: bool):
     global _buzzer_on
     _buzzer_on = bool(on)
     if GPIO_AVAILABLE and buzzer is not None:
-        if on:
-            buzzer.on()
+        if PASSIVE_MODE:
+            # 수동형: 2048Hz PWM, 듀티로 음량/전류 조절
+            buzzer.value = PASSIVE_DUTY if on else 0.0
         else:
-            buzzer.off()
+            # 능동형: 단순 ON/OFF
+            if on:
+                buzzer.on()
+            else:
+                buzzer.off()
     _emit({"event": "buzzer", "on": _buzzer_on})
 
 
@@ -181,13 +200,23 @@ def init_gpio():
         log.warning("gpiozero 없음 — 시뮬레이션 모드 (pip install gpiozero lgpio)")
         return
     try:
-        # 능동 부저: 전압만 걸면 소리나므로 단순 디지털 ON/OFF (Buzzer)
-        buzzer = Buzzer(BUZZER_PIN)
+        if PASSIVE_MODE:
+            # 수동형 부저: 2048Hz PWM 구동 (듀티 낮춰 전류 제한)
+            buzzer = PWMOutputDevice(
+                BUZZER_PIN,
+                frequency=PASSIVE_FREQ,
+                initial_value=0.0,
+            )
+            mode_str = f"수동형/PWM {PASSIVE_FREQ}Hz duty{int(PASSIVE_DUTY*100)}%"
+        else:
+            # 능동 부저: 전압만 걸면 소리나므로 단순 디지털 ON/OFF (Buzzer)
+            buzzer = Buzzer(BUZZER_PIN)
+            mode_str = "능동형/ON·OFF"
         # 버튼: 내부 풀업, GND로 누름. bounce_time 으로 채터링 제거(300ms)
         button = Button(BUTTON_PIN, pull_up=True, bounce_time=0.3)
         button.when_pressed = _on_button
         GPIO_AVAILABLE = True
-        log.info(f"GPIO 초기화 완료 (부저={BUZZER_PIN}, 버튼={BUTTON_PIN}, gpiozero/lgpio)")
+        log.info(f"GPIO 초기화 완료 (부저={BUZZER_PIN}[{mode_str}], 버튼={BUTTON_PIN}, gpiozero/lgpio)")
     except Exception as e:
         GPIO_AVAILABLE = False
         log.warning(f"GPIO 초기화 실패 — 시뮬레이션 모드로 전환: {e}")
